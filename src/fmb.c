@@ -39,7 +39,12 @@ int usage(char *name, int rc)
 	fprintf(stderr, "\t\tAccepted range: 0=< p <=3\n");
 	fprintf(stderr, "\t\t[default: 2]\n");
 	fprintf(stderr, "\n");
-
+	fprintf(stderr, "\t-s, --separator <STRING>\n");
+	fprintf(stderr,
+		"\t\tWhen provided `separator` will be prefixed to any units\n");
+	fprintf(stderr,
+		"\t\tE.g. `fmb 2048` -> 2KB ; fmb -s ' ' 2048 -> 2 KB\n");
+	fprintf(stderr, "\n");
 	return rc;
 }
 
@@ -76,15 +81,19 @@ int parse_int(char *input, int *res)
 	return 0;
 }
 
-// todo: base as a freefloating int is gross
-char *fmb(uint64_t bytes, char *buf, size_t buflen, int precision, int base)
+// todo: base as a int is gross. move this work to comp time
+char *fmb(uint64_t bytes, char *buf, size_t buflen, int precision, int base,
+	  char *sep)
 {
-	static const char *units[] = { "", "KB", "MB", "GB", "TB", "PB", "EB" };
+	static const char *units[] = { "", "K", "M", "G", "T", "P", "E" };
 	static const uint64_t b10[] = { 1ULL, 10ULL, 100ULL, 1000ULL };
 	const size_t n_units = sizeof(units) / sizeof(units[0]);
 
+	if (!sep)
+		sep = "";
+
 	if (base != 1000)
-		base=1024;
+		base = 1024;
 
 	if (precision > MAXPREC)
 		precision = MAXPREC;
@@ -94,18 +103,20 @@ char *fmb(uint64_t bytes, char *buf, size_t buflen, int precision, int base)
 
 	uint64_t whole, frac;
 
-	while (scaled >= (__uint128_t)base * b10[precision] && idx < n_units - 1) {
-		scaled = (scaled + base/2) / base;
+	while (scaled >= (__uint128_t)base * b10[precision] &&
+	       idx < n_units - 1) {
+		scaled = (scaled + base / 2) / base;
 		++idx;
 	}
 
 	if (!idx || !precision) {
-		snprintf(buf, buflen, "%" PRIu64 "%s", (uint64_t)scaled / b10[precision], units[idx]);
+		snprintf(buf, buflen, "%" PRIu64 "%s%s",
+			 (uint64_t)scaled / b10[precision], sep, units[idx]);
 		return buf;
 	}
 
 	whole = (uint64_t)(scaled / b10[precision]);
-	frac  = (uint64_t)(scaled % b10[precision]);
+	frac = (uint64_t)(scaled % b10[precision]);
 
 	while (precision && frac % 10 == 0) {
 		frac /= 10;
@@ -113,46 +124,23 @@ char *fmb(uint64_t bytes, char *buf, size_t buflen, int precision, int base)
 	}
 
 	if (precision) {
-		snprintf(buf, buflen, "%" PRIu64 ".%0*" PRIu64 "%s",
-			 whole, precision, frac, units[idx]);
+		snprintf(buf, buflen, "%" PRIu64 ".%0*" PRIu64 "%s%s", whole,
+			 precision, frac, sep, units[idx]);
 	} else {
-		snprintf(buf, buflen, "%" PRIu64 "%s", whole, units[idx]);
+		snprintf(buf, buflen, "%" PRIu64 "%s%s", whole, sep,
+			 units[idx]);
 	}
 	return buf;
-
-	//if (frac == 0) {
-	//	snprintf(buf, buflen, "%" PRIu64 "%s", whole, units[idx]);
-	//} else if (whole < 10) {
-	//	if (frac % 10 == 0) {
-	//		snprintf(buf, buflen, "%" PRIu64 ".%01" PRIu64 "%s",
-	//			 whole, frac / 10, units[idx]);
-	//	} else {
-	//		snprintf(buf, buflen, "%" PRIu64 ".%02" PRIu64 "%s",
-	//			 whole, frac, units[idx]);
-	//	}
-	//} else if (whole < 100) {
-	//	uint64_t tenths = (frac + 5) / 10;
-	//	if (tenths == 0) {
-	//		snprintf(buf, buflen, "%" PRIu64 "%s", whole,
-	//			 units[idx]);
-	//	} else {
-	//		snprintf(buf, buflen, "%" PRIu64 ".%01" PRIu64 "%s",
-	//			 whole, tenths, units[idx]);
-	//	}
-	//} else {
-	//	if (frac >= 50)
-	//		++whole;
-	//	snprintf(buf, buflen, "%" PRIu64 "%s", whole, units[idx]);
-	//}
-	//return buf;
 }
 
 int main(int argc, char **argv)
 {
-	static struct option long_options[] = { { "help", no_argument, 0, 'h' },
-						{ "precision",
-						  required_argument, 0, 'p' },
-						{ 0, 0, 0, 0 } };
+	static struct option long_options[] = {
+		{ "help", no_argument, 0, 'h' },
+		{ "precision", required_argument, 0, 'p' },
+		{ "separator", required_argument, 0, 's' },
+		{ 0, 0, 0, 0 }
+	};
 
 	int option_index = 0;
 	int c;
@@ -162,13 +150,17 @@ int main(int argc, char **argv)
 	uint64_t *nums;
 	nums = calloc(MAXNUMS, sizeof(*nums));
 
-	int precision=2;
-	while ((c = getopt_long(argc, argv, "hp:", long_options,
+	int precision = 2;
+	char *separator = "";
+	while ((c = getopt_long(argc, argv, "hp:s:", long_options,
 				&option_index)) != -1) {
 		switch (c) {
 		case 'h':
 			usage(*argv, 0);
 			return 0;
+		case 's':
+			separator = optarg;
+			break;
 		case 'p':
 			if ((parse_int(optarg, &precision)))
 				invalid_input("Invalid precision string: '%s'",
@@ -196,7 +188,8 @@ int main(int argc, char **argv)
 
 	char buf[64] = { 0 };
 	for (; i--;)
-		printf("%s\n", fmb(*nums++, buf, 32, precision,1024));
+		printf("%s\n",
+		       fmb(*nums++, buf, 32, precision, 1024, separator));
 
 	return 0;
 }
