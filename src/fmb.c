@@ -15,6 +15,7 @@
 #endif
 
 #define MAXNUMS 1024
+#define MAXPREC 3
 
 char *envstr(char *name)
 {
@@ -32,11 +33,13 @@ int usage(char *name, int rc)
 	fprintf(stderr, "\t\tShow this help message\n");
 	fprintf(stderr, "\n");
 
-	fprintf(stderr, "\t-i, --input FILE\n");
-	fprintf(stderr, "\t\tSpecify input file\n");
-	fprintf(stderr, "\t\t[default: stdin]\n");
-	fprintf(stderr, "\t\t[env: INPUT_FILE=%s]\n", envstr("INPUT_FILE"));
+	fprintf(stderr, "\t-p, --precision <PRECISION>\n");
+	fprintf(stderr,
+		"\t\tThe number of decimal places to output for fractional values.\n");
+	fprintf(stderr, "\t\tAccepted range: 0=< p <=3\n");
+	fprintf(stderr, "\t\t[default: 2]\n");
 	fprintf(stderr, "\n");
+
 	return rc;
 }
 
@@ -73,62 +76,83 @@ int parse_int(char *input, int *res)
 	return 0;
 }
 
-char *fmb(uint64_t bytes, char *buf, size_t buflen)
+// todo: base as a freefloating int is gross
+char *fmb(uint64_t bytes, char *buf, size_t buflen, int precision, int base)
 {
 	static const char *units[] = { "", "KB", "MB", "GB", "TB", "PB", "EB" };
+	static const uint64_t b10[] = { 1ULL, 10ULL, 100ULL, 1000ULL };
 	const size_t n_units = sizeof(units) / sizeof(units[0]);
 
+	if (base != 1000)
+		base=1024;
+
+	if (precision > MAXPREC)
+		precision = MAXPREC;
+
 	size_t idx = 0;
-	__uint128_t scaled = (__uint128_t)bytes * 100u;
+	__uint128_t scaled = (__uint128_t)bytes * b10[precision];
+
 	uint64_t whole, frac;
 
-	while (scaled >= ((__uint128_t)1024 * 100u) && idx < n_units - 1) {
-		scaled = (scaled + 512u) / 1024u;
+	while (scaled >= (__uint128_t)base * b10[precision] && idx < n_units - 1) {
+		scaled = (scaled + base/2) / base;
 		++idx;
 	}
 
-	if (idx == 0) {
-		snprintf(buf, buflen, "%" PRIu64 "%s", bytes, units[idx]);
+	if (!idx || !precision) {
+		snprintf(buf, buflen, "%" PRIu64 "%s", (uint64_t)scaled / b10[precision], units[idx]);
 		return buf;
 	}
 
-	whole = (uint64_t)(scaled / 100u);
-	frac = (uint64_t)(scaled % 100u);
+	whole = (uint64_t)(scaled / b10[precision]);
+	frac  = (uint64_t)(scaled % b10[precision]);
 
-	if (frac == 0) {
-		snprintf(buf, buflen, "%" PRIu64 "%s", whole, units[idx]);
-	} else if (whole < 10) {
-		if (frac % 10 == 0) {
-			snprintf(buf, buflen, "%" PRIu64 ".%01" PRIu64 "%s",
-				 whole, frac / 10, units[idx]);
-		} else {
-			snprintf(buf, buflen, "%" PRIu64 ".%02" PRIu64 "%s",
-				 whole, frac, units[idx]);
-		}
-	} else if (whole < 100) {
-		uint64_t tenths = (frac + 5) / 10;
-		if (tenths == 0) {
-			snprintf(buf, buflen, "%" PRIu64 "%s", whole,
-				 units[idx]);
-		} else {
-			snprintf(buf, buflen, "%" PRIu64 ".%01" PRIu64 "%s",
-				 whole, tenths, units[idx]);
-		}
+	while (precision && frac % 10 == 0) {
+		frac /= 10;
+		--precision;
+	}
+
+	if (precision) {
+		snprintf(buf, buflen, "%" PRIu64 ".%0*" PRIu64 "%s",
+			 whole, precision, frac, units[idx]);
 	} else {
-		if (frac >= 50)
-			++whole;
 		snprintf(buf, buflen, "%" PRIu64 "%s", whole, units[idx]);
 	}
 	return buf;
+
+	//if (frac == 0) {
+	//	snprintf(buf, buflen, "%" PRIu64 "%s", whole, units[idx]);
+	//} else if (whole < 10) {
+	//	if (frac % 10 == 0) {
+	//		snprintf(buf, buflen, "%" PRIu64 ".%01" PRIu64 "%s",
+	//			 whole, frac / 10, units[idx]);
+	//	} else {
+	//		snprintf(buf, buflen, "%" PRIu64 ".%02" PRIu64 "%s",
+	//			 whole, frac, units[idx]);
+	//	}
+	//} else if (whole < 100) {
+	//	uint64_t tenths = (frac + 5) / 10;
+	//	if (tenths == 0) {
+	//		snprintf(buf, buflen, "%" PRIu64 "%s", whole,
+	//			 units[idx]);
+	//	} else {
+	//		snprintf(buf, buflen, "%" PRIu64 ".%01" PRIu64 "%s",
+	//			 whole, tenths, units[idx]);
+	//	}
+	//} else {
+	//	if (frac >= 50)
+	//		++whole;
+	//	snprintf(buf, buflen, "%" PRIu64 "%s", whole, units[idx]);
+	//}
+	//return buf;
 }
 
 int main(int argc, char **argv)
 {
-
-	static struct option long_options[] = {
-		{ "help", no_argument, 0, 'h' },
-		{ 0, 0, 0, 0 }
-	};
+	static struct option long_options[] = { { "help", no_argument, 0, 'h' },
+						{ "precision",
+						  required_argument, 0, 'p' },
+						{ 0, 0, 0, 0 } };
 
 	int option_index = 0;
 	int c;
@@ -138,12 +162,18 @@ int main(int argc, char **argv)
 	uint64_t *nums;
 	nums = calloc(MAXNUMS, sizeof(*nums));
 
-	while ((c = getopt_long(argc, argv, "h", long_options,
+	int precision=2;
+	while ((c = getopt_long(argc, argv, "hp:", long_options,
 				&option_index)) != -1) {
 		switch (c) {
 		case 'h':
 			usage(*argv, 0);
 			return 0;
+		case 'p':
+			if ((parse_int(optarg, &precision)))
+				invalid_input("Invalid precision string: '%s'",
+					      optarg);
+			break;
 		case '?':
 			return 1;
 		default:
@@ -154,7 +184,7 @@ int main(int argc, char **argv)
 	int i = 0;
 	if (optind == argc) {
 		ssize_t read = 0;
-		while (i < MAXNUMS && fscanf(stdin, "%"PRIu64, &nums[i]) == 1)
+		while (i < MAXNUMS && fscanf(stdin, "%" PRIu64, &nums[i]) == 1)
 			++i;
 	} else {
 		for (; i + optind < argc; ++i) {
@@ -166,7 +196,7 @@ int main(int argc, char **argv)
 
 	char buf[64] = { 0 };
 	for (; i--;)
-		printf("%s\n", fmb(*nums++, buf, 32));
+		printf("%s\n", fmb(*nums++, buf, 32, precision,1024));
 
 	return 0;
 }
