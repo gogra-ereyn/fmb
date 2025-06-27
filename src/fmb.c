@@ -45,6 +45,10 @@ int usage(char *name, int rc)
 	fprintf(stderr,
 		"\t\tE.g. `fmb 2048` -> 2KB ; fmb -s ' ' 2048 -> 2 KB\n");
 	fprintf(stderr, "\n");
+	fprintf(stderr, "\t-d, --decimal\n");
+	fprintf(stderr, "\t\tWhen set, bytes will be printed in decimal fmt (ie base 1000).\n");
+	fprintf(stderr, "\t\tIf you are neither doing networking nor shady hardware marketing, you shouldn't want this\n");
+	fprintf(stderr, "\n");
 	return rc;
 }
 
@@ -139,6 +143,7 @@ int main(int argc, char **argv)
 		{ "help", no_argument, 0, 'h' },
 		{ "precision", required_argument, 0, 'p' },
 		{ "separator", required_argument, 0, 's' },
+		{ "decimal", no_argument, 0, 'd' },
 		{ 0, 0, 0, 0 }
 	};
 
@@ -152,7 +157,8 @@ int main(int argc, char **argv)
 
 	int precision = 2;
 	char *separator = "";
-	while ((c = getopt_long(argc, argv, "hp:s:", long_options,
+	int decimal=0;
+	while ((c = getopt_long(argc, argv, "hdp:s:", long_options,
 				&option_index)) != -1) {
 		switch (c) {
 		case 'h':
@@ -160,6 +166,9 @@ int main(int argc, char **argv)
 			return 0;
 		case 's':
 			separator = optarg;
+			break;
+		case 'd':
+			decimal=1;
 			break;
 		case 'p':
 			if ((parse_int(optarg, &precision)))
@@ -188,8 +197,7 @@ int main(int argc, char **argv)
 
 	char buf[64] = { 0 };
 	for (; i--;)
-		printf("%s\n",
-		       fmb(*nums++, buf, 32, precision, 1024, separator));
+		printf("%s\n", fmb(*nums++, buf, 32, precision, decimal ? 1000 : 1024, separator));
 
 	return 0;
 }
