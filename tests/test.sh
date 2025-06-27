@@ -88,6 +88,7 @@ main() {
     # testflags
     ## precision
     testcase 2000 "1.953K" -p 3 || ((++failed))
+    testcase 2000 "1.953125K" -p 6 || ((++failed))
     testcase 2000 "2K" -p 0 || ((++failed))
 
     ## formatting - unit separator

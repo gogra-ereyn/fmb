@@ -15,7 +15,7 @@
 #endif
 
 #define MAXNUMS 1024
-#define MAXPREC 3
+#define MAXPREC 8
 
 char *envstr(char *name)
 {
@@ -36,7 +36,7 @@ int usage(char *name, int rc)
 	fprintf(stderr, "\t-p, --precision <PRECISION>\n");
 	fprintf(stderr,
 		"\t\tThe number of decimal places to output for fractional values.\n");
-	fprintf(stderr, "\t\tAccepted range: 0=< p <=3\n");
+	fprintf(stderr, "\t\tThe max precision is 8d.p.; this max will be used instead if a higher val is passed\n");
 	fprintf(stderr, "\t\t[default: 2]\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, "\t-s, --separator <STRING>\n");
@@ -90,7 +90,16 @@ char *fmb(uint64_t bytes, char *buf, size_t buflen, int precision, int base,
 	  char *sep)
 {
 	static const char *units[] = { "", "K", "M", "G", "T", "P", "E" };
-	static const uint64_t b10[] = { 1ULL, 10ULL, 100ULL, 1000ULL };
+	static const uint64_t b10[] = {
+		1ULL,
+		10ULL,
+		100ULL,
+		1000ULL,
+		10000ULL,
+		100000ULL,
+		1000000ULL,
+		10000000ULL,
+	};
 	const size_t n_units = sizeof(units) / sizeof(units[0]);
 
 	if (!sep)
