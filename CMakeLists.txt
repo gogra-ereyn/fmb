@@ -11,20 +11,8 @@ set(CMAKE_C_FLAGS_RELEASE          "${FAST_OPTS} -DNDEBUG")
 set(CMAKE_C_FLAGS_RELWITHDEBINFO   "${FAST_OPTS} -g")
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
 
-add_executable(fmb src/fmb.c)
-function(create_bin_link tgt)
-    add_custom_command(TARGET ${tgt} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E create_symlink
-            build/$<TARGET_FILE_NAME:${tgt}>
-            ${CMAKE_SOURCE_DIR}/${tgt}
-        COMMENT "Creating symlink to ${tgt} in project root"
-    )
-endfunction()
-create_bin_link(fmb)
-
 enable_testing()
-
-create_bin_link(fmb)
+add_executable(fmb ${CMAKE_CURRENT_SOURCE_DIR}/fmb.c)
 add_test(
     NAME run_tests COMMAND bash ${CMAKE_SOURCE_DIR}/tests/test.sh
 )
